@@ -6,16 +6,20 @@
     <form>
         <div>
             <label for="geimBoardWidth">Geim Board Width (M):</label>
-            <input type="number" id="geimBoardWidth" name="geimBoardWidth" min="2" max="10" value="10" required>
+            <input type="number" id="geimBoardWidth" name="geimBoardWidth" min="2" max="12" value="10" required>
 
             <label for="geimBoardHeight">Geim Board Height (N):</label>
-            <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="10" value="10" required>
+            <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="12" value="10" required>
 
             <label for="colorsCount">Colors Count (C):</label>
             <input type="number" id="colorsCount" name="colorsCount" min="3" max="12" value="3" required>
+
+            <label for="minSampleSize">Min Sample Size (K):</label>
+            <input type="number" id="minSampleSize" name="minSampleSize" min="2" max="12" value="2" required>
         </div>
         <div>
             <input type="button" id="resetButton" value="Reset Game Board">
+            <input type="button" id="shuffleButton" value="Shuffle Game Board">
         </div>
     </form>
 
@@ -63,11 +67,12 @@
         };
 
         class GameBoard {
-            constructor(canvas, M, N, C) {
+            constructor(canvas, M, N, C, K = 2) {
                 this.canvas = canvas;
                 this.columns = M;
                 this.rows = N;
                 this.colorsCount = C;
+                this.minSampleSize = K;
                 
                 this.ctx2d = this.canvas.getContext("2d");
                 this.palette = getPalette(this.colorsCount);
@@ -83,11 +88,30 @@
                 }
 
                 this.canvas.removeEventListener('click', null);
-                this.canvas.addEventListener('click', function(event) {gameBoard.onClick(event);});
+                this.canvas.addEventListener('click', (event) => {this.onClick(event);});
+
+                this.updateInterval = setInterval(()=>{this.update();}, 166);
+                this.isUpdated = false;
+            }
+            update() {
+                if (this.isUpdated) return;
+
+                this.draw();
+
+                this.isUpdated = true;
             }
             draw() {
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
+            }
+            shuffleTiles() {
+                for (let i = this.tiles.length - 1; i > 0; --i) {
+                    let j = Math.floor(Math.random() * (i + 1));
+                    if (this.tiles[i] != null && this.tiles[j] != null) {
+                        [this.tiles[i].color, this.tiles[j].color] = [this.tiles[j].color, this.tiles[i].color];
+                    }
+                }
+                this.isUpdated = false;
             }
             getTiles(idx, row, col, color = null) {
                 var npp = row * this.columns + col;
@@ -118,10 +142,10 @@
 
                 var idx = [];
                 this.getTiles(idx, row, col);
-                if (idx.length > 1)
+                if (idx.length >= this.minSampleSize) {
                     idx.forEach((n) => { this.tiles[n] = null; });
-
-                this.draw();
+                    this.isUpdated = false;
+                }
             }
         };
 
@@ -133,9 +157,16 @@
             var M = parseInt(document.getElementById("geimBoardWidth").value);
             var N = parseInt(document.getElementById("geimBoardHeight").value);
             var C = parseInt(document.getElementById("colorsCount").value);
+            var K = parseInt(document.getElementById("minSampleSize").value);
 
-            gameBoard = new GameBoard(canvas, M, N, C);
-            gameBoard.draw();
+            gameBoard = new GameBoard(canvas, M, N, C, K);
+        });
+
+        var shuffleButton = document.getElementById("shuffleButton");
+        shuffleButton.addEventListener('click', function (event) {
+            if (gameBoard != null) {
+                gameBoard.shuffleTiles();
+            }
         });
 
     </script>
