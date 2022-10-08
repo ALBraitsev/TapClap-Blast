@@ -38,6 +38,10 @@
             color() {
                 return `hsla(${this.hue}deg, ${this.saturation}%, ${this.lightness}%, ${this.alpha}%)`
             }
+            equal(color) {
+                return this.hue == color.hue && this.saturation == color.saturation && 
+                this.lightness == color.lightness && this.alpha == color.alpha;
+            }
         };
 
         function getPalette(num_colors) {
@@ -47,9 +51,48 @@
                 var saturation = 90 + Math.random() * 10;
                 var lightness = 50 + Math.random() * 10;
                 palette.push(new HSLColor(hue, saturation, lightness));
-
             }
             return palette;
+        }
+
+        class Action {
+            constructor (from, to, duration, actor) {
+                this.from = from;
+                this.to = to;
+                this.duration = duration;
+                this.actor = actor;
+                this.part = 0;
+            }
+            // возвращает true если произошли изменения
+            // иначе false
+            update (timestamp) {
+                if (this.part >= 1.0) return false;
+                if (this.begin === undefined) this.begin = timestamp;
+                this.part = this.duration == 0 ? 1.0 : (timestamp - this.begin) / this.duration;
+                this.actor(this.from + (this.to - this.from) * Math.min(1.0, this.part));
+                return true;
+            }
+        };
+        class ActionSequence {
+            constructor (actions) {
+                this.actions = actions;
+            }
+            // возвращает true если произошли изменения
+            // иначе false
+            update (timestamp) {
+                let isChanged = false;
+                this.actions.forEach(
+                    (action, index, actions) => { 
+                        if (isChanged == false) {
+                            isChanged ||= action.update(timestamp);
+                            if (isChanged == false) {
+                                actions.splice(index, 1);
+                            }
+                        }
+                    }
+                );
+                return isChanged || this.actions.length > 0;
+            }
         }
 
         class Tile {
@@ -59,6 +102,7 @@
                 this.width = width;
                 this.height = height;
                 this.color = color;
+                this.animations = [];
             }
             draw(ctx) {
                 ctx.fillStyle = this.color.color();
@@ -83,26 +127,43 @@
                 for (var row = 0; row < this.rows; ++row) {
                     for (var column = 0; column < this.columns; ++column) {
                         var colorNumber = parseInt(Math.random() * this.colorsCount);
-                        this.tiles.push(new Tile(row, column, this.tailWidth, this.tailHeight, this.palette[colorNumber]));
+                        let hsl = this.palette[colorNumber];
+                        this.tiles.push(new Tile(row, column, this.tailWidth, this.tailHeight, new HSLColor(hsl.hue, hsl.saturation, hsl.lightness, hsl.alpha)));
                     }
                 }
+
+                this.actions = [];
 
                 this.canvas.removeEventListener('click', null);
                 this.canvas.addEventListener('click', (event) => {this.onClick(event);});
 
-                this.updateInterval = setInterval(()=>{this.update();}, 166);
-                this.isUpdated = false;
+                this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
+                this.isChanged = true;
             }
-            update() {
-                if (this.isUpdated) return;
-
-                this.draw();
-
-                this.isUpdated = true;
+            release() {
+                window.cancelAnimationFrame(this.raf);
             }
+
+            update(timestamp) {
+                let isChanged = this.isChanged;
+                this.isChanged = false;
+                this.actions.forEach(
+                    (action, index, actions) => { 
+                        // console.log("Action " + index);
+                        let updated = action.update(timestamp);
+                        this.isChanged ||= updated;
+                        if (updated == false) actions.splice(index, 1);
+                    }
+                );
+                this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
+
+                if(isChanged == true) this.draw();
+            }
+
             draw() {
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
+                console.log("GameBoard::draw");
             }
             shuffleTiles() {
                 for (let i = this.tiles.length - 1; i > 0; --i) {
@@ -111,16 +172,16 @@
                         [this.tiles[i].color, this.tiles[j].color] = [this.tiles[j].color, this.tiles[i].color];
                     }
                 }
-                this.isUpdated = false;
+                this.isChanged = true;
             }
-            getTiles(idx, row, col, color = null) {
+            getTileNumbersToRemove(idx, row, col, color = null) {
                 var npp = row * this.columns + col;
 
                 if (idx.includes(npp)) return;
                 if (this.tiles[npp] == null) return;
 
                 if (color) {
-                    if (this.tiles[npp].color == color) {
+                    if (this.tiles[npp].color.equal(color)) {
                         idx.push(npp);
                     }
                     else {
@@ -131,20 +192,34 @@
                     idx.push(npp);
                 }
 
-                if (row > 0) this.getTiles(idx, row - 1, col, this.tiles[npp].color);
-                if (row < this.rows - 1) this.getTiles(idx, row + 1, col, this.tiles[npp].color);
-                if (col > 0) this.getTiles(idx, row, col - 1, this.tiles[npp].color);
-                if (col < this.columns - 1) this.getTiles(idx, row, col + 1, this.tiles[npp].color);
+                if (row > 0) this.getTileNumbersToRemove(idx, row - 1, col, this.tiles[npp].color);
+                if (row < this.rows - 1) this.getTileNumbersToRemove(idx, row + 1, col, this.tiles[npp].color);
+                if (col > 0) this.getTileNumbersToRemove(idx, row, col - 1, this.tiles[npp].color);
+                if (col < this.columns - 1) this.getTileNumbersToRemove(idx, row, col + 1, this.tiles[npp].color);
             }
+
             onClick(event) {
+                if (this.isChanged) return;
+                console.log("onClick" + this.isChanged);
+
                 var row = parseInt(event.layerY / this.tailHeight);
                 var col = parseInt(event.layerX / this.tailWidth);
 
-                var idx = [];
-                this.getTiles(idx, row, col);
-                if (idx.length >= this.minSampleSize) {
-                    idx.forEach((n) => { this.tiles[n] = null; });
-                    this.isUpdated = false;
+                var tileNumbersToRemove = [];
+                this.getTileNumbersToRemove(tileNumbersToRemove, row, col);
+
+                if (tileNumbersToRemove.length >= this.minSampleSize) {
+
+
+                    tileNumbersToRemove.forEach((n) => {
+                            this.actions.push(new ActionSequence([
+                                new Action(100,0,200,(v)=>{this.tiles[n].color.alpha = v;}),
+                                new Action(0,0,0,(v)=>{this.tiles[n] = null;})
+                            ]));
+                        }
+                    );
+
+                    this.isChanged = true;
                 }
             }
         };
@@ -159,6 +234,7 @@
             var C = parseInt(document.getElementById("colorsCount").value);
             var K = parseInt(document.getElementById("minSampleSize").value);
 
+            if (gameBoard) gameBoard.release();
             gameBoard = new GameBoard(canvas, M, N, C, K);
         });
 
