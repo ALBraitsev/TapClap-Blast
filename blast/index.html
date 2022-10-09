@@ -22,6 +22,12 @@
 
             <label for="maxShuffleCount">Допустимое количество перемешиваний (S):</label>
             <input type="number" id="maxShuffleCount" name="maxShuffleCount" min="0" max="100" value="10" required>
+
+            <label for="requiredPoints">Необходимо набрать очков (X):</label>
+            <input type="number" id="requiredPoints" name="requiredPoints" min="1" max="1000" value="100" required>
+
+            <label for="allowedMoves">Допустимое количество ходов (Y):</label>
+            <input type="number" id="allowedMoves" name="allowedMoves" min="1" max="1000" value="50" required>
         </div>
         <div>
             <input type="button" id="resetButton" value="Новая игра">
@@ -132,12 +138,16 @@
         };
 
         class GameBoard {
-            constructor(canvas, M, N, C, K = 2) {
+            constructor(canvas, M, N, C, K, S, X, Y) {
                 this.canvas = canvas;
                 this.columns = M;
                 this.rows = N;
                 this.colorsCount = C;
                 this.minSampleSize = K;
+                this.shuffleCount = S;
+
+                this.requiredPoints = X;
+                this.allowedMoves = Y;
                 
                 this.ctx2d = this.canvas.getContext("2d");
                 this.palette = getPalette(this.colorsCount);
@@ -147,9 +157,7 @@
                 this.tiles = [];
                 for (var row = 0; row < this.rows; ++row) {
                     for (var column = 0; column < this.columns; ++column) {
-                        var colorNumber = parseInt(Math.random() * this.colorsCount);
-                        let hsl = this.palette[colorNumber];
-                        this.tiles.push(new Tile(row, column, this.tailWidth, this.tailHeight, new HSLColor(hsl.hue, hsl.saturation, hsl.lightness, hsl.alpha)));
+                        this.tiles.push(null);
                     }
                 }
 
@@ -159,31 +167,55 @@
                 this.canvas.addEventListener('click', (event) => {this.onClick(event);});
 
                 this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
-                this.isChanged = true;
+
+                this.fillTiles();
+            }
+            fillTiles() {
+                for (var row = 0; row < this.rows; ++row) {
+                    for (var column = 0; column < this.columns; ++column) {
+                        let n = row * this.columns + column;
+                        if (this.tiles[n] == null)
+                        {
+                            let colorNumber = parseInt(Math.random() * this.colorsCount);
+                            let hsl = this.palette[colorNumber];
+                            this.tiles[n] = new Tile(row, column, this.tailWidth, this.tailHeight, new HSLColor(hsl.hue, hsl.saturation, hsl.lightness, 0));
+                            this.action.actions.push(new Action(0,100,100,(v)=>{this.tiles[n].color.alpha = v;}));
+                            this.isChanged = true;
+                        }
+                    }
+                }
             }
             release() {
                 window.cancelAnimationFrame(this.raf);
             }
-
             update(timestamp) {
                 let isChanged = this.isChanged;
                 this.isChanged = false || this.action.update(timestamp);
                 this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
                 if(isChanged == true) this.draw();
             }
+            drawStatus() {
+                console.log(
+                    "Нужно набрать " + this.requiredPoints + " за " + this.allowedMoves + " ходов. " +
+                    "Осталось " + this.shuffleCount + " перемешиваний");
+            }
             draw() {
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
-                console.log("GameBoard::draw");
+
+                this.drawStatus();
             }
             shuffleTiles() {
-                for (let i = this.tiles.length - 1; i > 0; --i) {
-                    let j = Math.floor(Math.random() * (i + 1));
-                    if (this.tiles[i] != null && this.tiles[j] != null) {
-                        [this.tiles[i].color, this.tiles[j].color] = [this.tiles[j].color, this.tiles[i].color];
+                if (this.shuffleCount > 0) {
+                    for (let i = this.tiles.length - 1; i > 0; --i) {
+                        let j = Math.floor(Math.random() * (i + 1));
+                        if (this.tiles[i] != null && this.tiles[j] != null) {
+                            [this.tiles[i].color, this.tiles[j].color] = [this.tiles[j].color, this.tiles[i].color];
+                        }
                     }
+                    this.isChanged = true;
+                    --this.shuffleCount;
                 }
-                this.isChanged = true;
             }
             getNumbersOfFallingTiles(tileNumbers) {
                 let numbersOfFallingTiles = [];
@@ -237,6 +269,10 @@
                 this.getTileNumbersToRemove(tileNumbersToRemove, row, col);
 
                 if (tileNumbersToRemove.length >= this.minSampleSize) {
+
+                    this.requiredPoints -= parseInt(tileNumbersToRemove.length * (tileNumbersToRemove.length / this.minSampleSize));
+                    --this.allowedMoves;
+
                     let hideSelectedTileAction = new ActionParallel();
                     tileNumbersToRemove.forEach((n) => {
                         hideSelectedTileAction.actions.push(new ActionSequence([
@@ -253,9 +289,10 @@
                         dropTilesAction.actions.push(new Action(0,0,0,(v)=>{this.tiles[t[3]] = this.tiles[t[0]]; this.tiles[t[0]] = null;}));
                     });
 
-                
                     this.action = new ActionSequence([hideSelectedTileAction, dropTilesAction]);
 
+                    this.action.actions.push(new Action(0,0,0,(v)=>{this.fillTiles();}));
+                    
                     this.isChanged = true;
                 }
             }
@@ -270,9 +307,12 @@
             var N = parseInt(document.getElementById("geimBoardHeight").value);
             var C = parseInt(document.getElementById("colorsCount").value);
             var K = parseInt(document.getElementById("minSampleSize").value);
+            var S = parseInt(document.getElementById("maxShuffleCount").value);
+            var X = parseInt(document.getElementById("requiredPoints").value);
+            var Y = parseInt(document.getElementById("allowedMoves").value);
 
             if (gameBoard) gameBoard.release();
-            gameBoard = new GameBoard(canvas, M, N, C, K);
+            gameBoard = new GameBoard(canvas, M, N, C, K, S, X, Y);
         });
 
         var shuffleButton = document.getElementById("shuffleButton");
