@@ -9,13 +9,13 @@
     <form>
         <div>
             <label for="geimBoardWidth">Ширина игрового поля (M):</label>
-            <input type="number" id="geimBoardWidth" name="geimBoardWidth" min="2" max="12" value="4" required>
+            <input type="number" id="geimBoardWidth" name="geimBoardWidth" min="2" max="12" value="7" required>
 
             <label for="geimBoardHeight">Высота игрового поля (N):</label>
-            <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="12" value="4" required>
+            <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="12" value="7" required>
 
             <label for="colorsCount">Количество цветов (C):</label>
-            <input type="number" id="colorsCount" name="colorsCount" min="3" max="12" value="3" required>
+            <input type="number" id="colorsCount" name="colorsCount" min="3" max="12" value="7" required>
 
             <label for="minSampleSize">Минимальный размер группы (K):</label>
             <input type="number" id="minSampleSize" name="minSampleSize" min="2" max="12" value="2" required>
@@ -121,7 +121,6 @@
                 return isChanged || this.actions.length > 0;
             }
         }
-
         class Tile {
             constructor(row, column, width, height, color) {
                 this.row = row;
@@ -136,7 +135,6 @@
                 ctx.fillRect(this.width * this.col, this.height * this.row, this.width, this.height);
             }
         };
-
         class GameBoard {
             constructor(canvas, M, N, C, K, S, X, Y) {
                 this.canvas = canvas;
@@ -171,7 +169,7 @@
                 this.fillTiles();
             }
             fillTiles() {
-                for (var row = 0; row < this.rows; ++row) {
+                for (var row = this.rows - 1; row >= 0 ; --row) {
                     for (var column = 0; column < this.columns; ++column) {
                         let n = row * this.columns + column;
                         if (this.tiles[n] == null)
@@ -196,14 +194,15 @@
             }
             drawStatus() {
                 console.log(
-                    "Нужно набрать " + this.requiredPoints + " за " + this.allowedMoves + " ходов. " +
-                    "Осталось " + this.shuffleCount + " перемешиваний");
+                    "Нужно набрать " + this.requiredPoints + " очков за " + this.allowedMoves + " ходов. " +
+                    "Возможно " + this.getNumberOfPossibleMoves() + " ходов. " +
+                    "Доступно " + this.shuffleCount + " перемешиваний");
             }
             draw() {
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
 
-                this.drawStatus();
+                if(this.isChanged == false) this.drawStatus();
             }
             shuffleTiles() {
                 if (this.shuffleCount > 0) {
@@ -257,6 +256,17 @@
                 if (row < this.rows - 1) this.getTileNumbersToRemove(idx, row + 1, col, this.tiles[npp].color);
                 if (col > 0) this.getTileNumbersToRemove(idx, row, col - 1, this.tiles[npp].color);
                 if (col < this.columns - 1) this.getTileNumbersToRemove(idx, row, col + 1, this.tiles[npp].color);
+            }
+            getNumberOfPossibleMoves() {
+                var numberOfPossibleMoves = 0;
+                for (var row = 0; row < this.rows; ++row) {
+                    for (var column = 0; column < this.columns; ++column) {
+                        let idx = [];
+                        this.getTileNumbersToRemove(idx, row, column);
+                        if (idx.length >= this.minSampleSize) ++numberOfPossibleMoves;
+                    }
+                }
+                return numberOfPossibleMoves;
             }
             onClick(event) {
                 if (this.isChanged) return;
