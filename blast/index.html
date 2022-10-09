@@ -1,31 +1,39 @@
 <!DOCTYPE html>
 <html>
-<title>TAPCLAP Blast Test</title>
+<head>
+    <meta charset="UTF-8">
+    <title>TAPCLAP Blast Test</title>
+</head>
 
 <body>
     <form>
         <div>
-            <label for="geimBoardWidth">Geim Board Width (M):</label>
-            <input type="number" id="geimBoardWidth" name="geimBoardWidth" min="2" max="12" value="10" required>
+            <label for="geimBoardWidth">Ширина игрового поля (M):</label>
+            <input type="number" id="geimBoardWidth" name="geimBoardWidth" min="2" max="12" value="4" required>
 
-            <label for="geimBoardHeight">Geim Board Height (N):</label>
-            <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="12" value="10" required>
+            <label for="geimBoardHeight">Высота игрового поля (N):</label>
+            <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="12" value="4" required>
 
-            <label for="colorsCount">Colors Count (C):</label>
+            <label for="colorsCount">Количество цветов (C):</label>
             <input type="number" id="colorsCount" name="colorsCount" min="3" max="12" value="3" required>
 
-            <label for="minSampleSize">Min Sample Size (K):</label>
+            <label for="minSampleSize">Минимальный размер группы (K):</label>
             <input type="number" id="minSampleSize" name="minSampleSize" min="2" max="12" value="2" required>
+
+            <label for="maxShuffleCount">Допустимое количество перемешиваний (S):</label>
+            <input type="number" id="maxShuffleCount" name="maxShuffleCount" min="0" max="100" value="10" required>
         </div>
         <div>
-            <input type="button" id="resetButton" value="Reset Game Board">
-            <input type="button" id="shuffleButton" value="Shuffle Game Board">
+            <input type="button" id="resetButton" value="Новая игра">
         </div>
     </form>
 
     <canvas id="myCanvas" width="640" height="480" style="border:1px solid #000000;">
     </canvas>
 
+    <form>
+        <input type="button" id="shuffleButton" value="Перемешать тайлы">
+    </form>
 
     <script>
         class HSLColor {
@@ -74,21 +82,34 @@
             }
         };
         class ActionSequence {
-            constructor (actions) {
+            constructor (actions = []) {
                 this.actions = actions;
             }
-            // возвращает true если произошли изменения
-            // иначе false
+            update (timestamp) {
+                let isChanged = false;
+                while (this.actions.length) {
+                    isChanged = this.actions[0].update(timestamp);
+                    if (isChanged == false) {
+                        this.actions.splice(0, 1);
+                    }
+                    else {
+                        break;
+                    }
+                }
+                return isChanged || this.actions.length > 0;
+            }
+        }
+        class ActionParallel {
+            constructor (actions = []) {
+                this.actions = actions;
+            }
             update (timestamp) {
                 let isChanged = false;
                 this.actions.forEach(
                     (action, index, actions) => { 
-                        if (isChanged == false) {
-                            isChanged ||= action.update(timestamp);
-                            if (isChanged == false) {
-                                actions.splice(index, 1);
-                            }
-                        }
+                        let updated = action.update(timestamp);
+                        isChanged ||= updated;
+                        if (updated == false) actions.splice(index, 1);
                     }
                 );
                 return isChanged || this.actions.length > 0;
@@ -132,7 +153,7 @@
                     }
                 }
 
-                this.actions = [];
+                this.action = new ActionParallel();
 
                 this.canvas.removeEventListener('click', null);
                 this.canvas.addEventListener('click', (event) => {this.onClick(event);});
@@ -146,20 +167,10 @@
 
             update(timestamp) {
                 let isChanged = this.isChanged;
-                this.isChanged = false;
-                this.actions.forEach(
-                    (action, index, actions) => { 
-                        // console.log("Action " + index);
-                        let updated = action.update(timestamp);
-                        this.isChanged ||= updated;
-                        if (updated == false) actions.splice(index, 1);
-                    }
-                );
+                this.isChanged = false || this.action.update(timestamp);
                 this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
-
                 if(isChanged == true) this.draw();
             }
-
             draw() {
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
@@ -173,6 +184,24 @@
                     }
                 }
                 this.isChanged = true;
+            }
+            getNumbersOfFallingTiles(tileNumbers) {
+                let numbersOfFallingTiles = [];
+
+                for (let col = 0; col < this.columns; ++col) {
+                    let rn = null;
+                    for (let row = this.rows - 1; row >= 0; --row) {
+                        let n = row * this.columns + col;
+                        if (tileNumbers.includes(n)) {
+                            if (rn == null) rn = [row, n];
+                        }
+                        else if ((rn != null) && (this.tiles[n] != null)) {
+                            numbersOfFallingTiles.push([n, row, rn[0], rn[1]]);
+                            rn[1] = --rn[0] * this.columns + col;
+                        }
+                    }
+                }
+                return numbersOfFallingTiles;
             }
             getTileNumbersToRemove(idx, row, col, color = null) {
                 var npp = row * this.columns + col;
@@ -197,7 +226,6 @@
                 if (col > 0) this.getTileNumbersToRemove(idx, row, col - 1, this.tiles[npp].color);
                 if (col < this.columns - 1) this.getTileNumbersToRemove(idx, row, col + 1, this.tiles[npp].color);
             }
-
             onClick(event) {
                 if (this.isChanged) return;
                 console.log("onClick" + this.isChanged);
@@ -209,15 +237,24 @@
                 this.getTileNumbersToRemove(tileNumbersToRemove, row, col);
 
                 if (tileNumbersToRemove.length >= this.minSampleSize) {
-
-
+                    let hideSelectedTileAction = new ActionParallel();
                     tileNumbersToRemove.forEach((n) => {
-                            this.actions.push(new ActionSequence([
-                                new Action(100,0,200,(v)=>{this.tiles[n].color.alpha = v;}),
-                                new Action(0,0,0,(v)=>{this.tiles[n] = null;})
+                        hideSelectedTileAction.actions.push(new ActionSequence([
+                                new Action(100,0,300,(v)=>{this.tiles[n].color.alpha = v;}),
+                                new Action(0,0,0,(v)=>{this.tiles[n] = null;}),
                             ]));
                         }
                     );
+
+                    let numbersOfFallingTiles = this.getNumbersOfFallingTiles(tileNumbersToRemove);
+                    let dropTilesAction = new ActionSequence();
+                    numbersOfFallingTiles.forEach((t) => {
+                        dropTilesAction.actions.push(new Action(t[1],t[2],200,(v)=>{this.tiles[t[0]].row = v;}));
+                        dropTilesAction.actions.push(new Action(0,0,0,(v)=>{this.tiles[t[3]] = this.tiles[t[0]]; this.tiles[t[0]] = null;}));
+                    });
+
+                
+                    this.action = new ActionSequence([hideSelectedTileAction, dropTilesAction]);
 
                     this.isChanged = true;
                 }
