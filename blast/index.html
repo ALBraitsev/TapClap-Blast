@@ -34,7 +34,7 @@
         </div>
     </form>
 
-    <canvas id="myCanvas" width="640" height="480" style="border:1px solid #000000;">
+    <canvas id="myCanvas" width="640" height="480" style="border:1px solid #000000;background: #000000;">
     </canvas>
 
     <form>
@@ -57,7 +57,6 @@
                 this.lightness == color.lightness && this.alpha == color.alpha;
             }
         };
-
         function getPalette(num_colors) {
             var palette = [];
             for (var i = 0, di = 360 / num_colors; i < 360; i += di) {
@@ -68,6 +67,9 @@
             }
             return palette;
         }
+
+        const easeInExpo = t => t === 0 ? 0 : Math.pow(2, 10 * t - 10)
+        const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
 
         class Action {
             constructor (from, to, duration, actor) {
@@ -83,6 +85,9 @@
                 if (this.part >= 1.0) return false;
                 if (this.begin === undefined) this.begin = timestamp;
                 this.part = this.duration == 0 ? 1.0 : (timestamp - this.begin) / this.duration;
+
+                this.part = easeOutExpo(Math.min(1.0, this.part));
+
                 this.actor(this.from + (this.to - this.from) * Math.min(1.0, this.part));
                 return true;
             }
@@ -137,6 +142,8 @@
         };
         class GameBoard {
             constructor(canvas, M, N, C, K, S, X, Y) {
+                this.gameOver = false;
+
                 this.canvas = canvas;
                 this.columns = M;
                 this.rows = N;
@@ -193,12 +200,24 @@
                 if(isChanged == true) this.draw();
             }
             drawStatus() {
-                console.log(
+                var possibleMoves = this.getNumberOfPossibleMoves();
+                this.gameOver = (this.allowedMoves == 0) || (this.requiredPoints <= 0) || ((possibleMoves == 0) && (this.shuffleCount == 0));
+
+                if (this.gameOver) {
+                    if (this.requiredPoints <= 0)
+                        console.log("Игра закончена. Вы победили");
+                    else
+                        console.log("Игра закончена. Вы проиграли");
+                }
+                else {
+                    console.log(
                     "Нужно набрать " + this.requiredPoints + " очков за " + this.allowedMoves + " ходов. " +
-                    "Возможно " + this.getNumberOfPossibleMoves() + " ходов. " +
+                    "Возможно " + possibleMoves + " ходов. " +
                     "Доступно " + this.shuffleCount + " перемешиваний");
+                }
             }
             draw() {
+                this.ctx2d.fillStyle = "#000000";
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
 
@@ -269,7 +288,8 @@
                 return numberOfPossibleMoves;
             }
             onClick(event) {
-                if (this.isChanged) return;
+                if (this.isChanged || this.gameOver) return;
+
                 console.log("onClick" + this.isChanged);
 
                 var row = parseInt(event.layerY / this.tailHeight);
@@ -295,7 +315,7 @@
                     let numbersOfFallingTiles = this.getNumbersOfFallingTiles(tileNumbersToRemove);
                     let dropTilesAction = new ActionSequence();
                     numbersOfFallingTiles.forEach((t) => {
-                        dropTilesAction.actions.push(new Action(t[1],t[2],200,(v)=>{this.tiles[t[0]].row = v;}));
+                        dropTilesAction.actions.push(new Action(t[1],t[2],100,(v)=>{this.tiles[t[0]].row = v;}));
                         dropTilesAction.actions.push(new Action(0,0,0,(v)=>{this.tiles[t[3]] = this.tiles[t[0]]; this.tiles[t[0]] = null;}));
                     });
 
