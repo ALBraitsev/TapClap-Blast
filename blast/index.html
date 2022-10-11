@@ -20,11 +20,17 @@
             <label for="minSampleSize">Минимальный размер группы (K):</label>
             <input type="number" id="minSampleSize" name="minSampleSize" min="2" max="12" value="2" required>
 
+            <label for="prizeSampleSize">Призовой размер группы (L):</label>
+            <input type="number" id="prizeSampleSize" name="prizeSampleSize" min="2" max="12" value="3" required>
+
+            <label for="destructionRadius">Радиус разрушений (R):</label>
+            <input type="number" id="destructionRadius" name="destructionRadius" min="2" max="12" value="2" required>
+
             <label for="maxShuffleCount">Допустимое количество перемешиваний (S):</label>
             <input type="number" id="maxShuffleCount" name="maxShuffleCount" min="0" max="100" value="10" required>
 
             <label for="requiredPoints">Необходимо набрать очков (X):</label>
-            <input type="number" id="requiredPoints" name="requiredPoints" min="1" max="1000" value="100" required>
+            <input type="number" id="requiredPoints" name="requiredPoints" min="1" max="1000" value="1" required>
 
             <label for="allowedMoves">Допустимое количество ходов (Y):</label>
             <input type="number" id="allowedMoves" name="allowedMoves" min="1" max="1000" value="50" required>
@@ -39,6 +45,10 @@
 
     <form>
         <input type="button" id="shuffleButton" value="Перемешать тайлы">
+        <div>
+            <textarea id="statusText" name="statusText" rows="5" cols="64"></textarea>
+        </div>
+        
     </form>
 
     <script>
@@ -127,21 +137,38 @@
             }
         }
         class Tile {
-            constructor(row, column, width, height, color) {
+            constructor(row, column, width, height, color, level = 0) {
                 this.row = row;
                 this.col = column;
                 this.width = width;
                 this.height = height;
                 this.color = color;
-                this.animations = [];
+                this.level = level;
             }
             draw(ctx) {
-                ctx.fillStyle = this.color.color();
+                if (this.level) {
+                    var grd = ctx.createRadialGradient(
+                        this.width * this.col + this.width / 2,
+                        this.height * this.row + this.height / 2, 
+                        this.width / 2,
+                        this.width * this.col + this.width / 2,
+                        this.height * this.row + this.height / 2, 
+                        this.width / 7 
+                    );
+
+                    grd.addColorStop(0, this.color.color());
+                    grd.addColorStop(1, "white");
+                    ctx.fillStyle = grd;
+                }
+                else {
+                    ctx.fillStyle = this.color.color();
+                }
+
                 ctx.fillRect(this.width * this.col, this.height * this.row, this.width, this.height);
             }
         };
         class GameBoard {
-            constructor(canvas, M, N, C, K, S, X, Y) {
+            constructor(canvas, M, N, C, K, L, R, S, X, Y) {
                 this.gameOver = false;
 
                 this.canvas = canvas;
@@ -149,6 +176,9 @@
                 this.rows = N;
                 this.colorsCount = C;
                 this.minSampleSize = K;
+                this.prizeSampleSize = L;
+                this.destructionRadius = R;
+
                 this.shuffleCount = S;
 
                 this.requiredPoints = X;
@@ -175,10 +205,11 @@
 
                 this.fillTiles();
             }
+            npp = (row, col) => row * this.columns + col;
             fillTiles() {
                 for (var row = this.rows - 1; row >= 0 ; --row) {
                     for (var column = 0; column < this.columns; ++column) {
-                        let n = row * this.columns + column;
+                        let n = this.npp(row, column);
                         if (this.tiles[n] == null)
                         {
                             let colorNumber = parseInt(Math.random() * this.colorsCount);
@@ -190,6 +221,16 @@
                     }
                 }
             }
+            hideTiles() {
+                let actions = new ActionParallel();
+                for (var row = this.rows - 1; row >= 0 ; --row) {
+                    for (var column = 0; column < this.columns; ++column) {
+                        let n = this.npp(row, column);
+                        actions.actions.push(new Action(100,30,1000,(v)=>{this.tiles[n].color.alpha = v;}));
+                    }
+                }
+                this.action = actions;
+            }
             release() {
                 window.cancelAnimationFrame(this.raf);
             }
@@ -200,30 +241,51 @@
                 if(isChanged == true) this.draw();
             }
             drawStatus() {
+                if (this.gameOver) return;
+
                 var possibleMoves = this.getNumberOfPossibleMoves();
+
                 this.gameOver = (this.allowedMoves == 0) || (this.requiredPoints <= 0) || ((possibleMoves == 0) && (this.shuffleCount == 0));
 
+                let msg = "";
                 if (this.gameOver) {
+                    this.hideTiles();
+
                     if (this.requiredPoints <= 0)
-                        console.log("Игра закончена. Вы победили");
+                        msg = ("Игра окончена. Вы победили!");
                     else
-                        console.log("Игра закончена. Вы проиграли");
+                        msg = ("Игра окончена. Вы проиграли.");
+
+                    this.msg = msg;
                 }
                 else {
-                    console.log(
+                    msg = (
                     "Нужно набрать " + this.requiredPoints + " очков за " + this.allowedMoves + " ходов. " +
                     "Возможно " + possibleMoves + " ходов. " +
                     "Доступно " + this.shuffleCount + " перемешиваний");
                 }
+                console.log(msg);
+                document.getElementById('statusText').value = msg;
             }
             draw() {
                 this.ctx2d.fillStyle = "#000000";
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
 
+                if (this.msg) {
+                    this.ctx2d.font = '36px serif';
+                    this.ctx2d.fillStyle = "white";
+                    this.ctx2d.textAlign = "center";                    
+                    this.ctx2d.fillText(this.msg, this.canvas.width/2, this.canvas.height/2);                    
+                    this.ctx2d.textBaseLine = "top";                    
+                    this.ctx2d.fillText(this.msg, this.canvas.width/2, this.canvas.height/2);                    
+                }
+
                 if(this.isChanged == false) this.drawStatus();
             }
             shuffleTiles() {
+                if (this.isChanged || this.gameOver) return;
+
                 if (this.shuffleCount > 0) {
                     for (let i = this.tiles.length - 1; i > 0; --i) {
                         let j = Math.floor(Math.random() * (i + 1));
@@ -254,7 +316,7 @@
                 return numbersOfFallingTiles;
             }
             getTileNumbersToRemove(idx, row, col, color = null) {
-                var npp = row * this.columns + col;
+                var npp = this.npp(row, col);
 
                 if (idx.includes(npp)) return;
                 if (this.tiles[npp] == null) return;
@@ -276,6 +338,18 @@
                 if (col > 0) this.getTileNumbersToRemove(idx, row, col - 1, this.tiles[npp].color);
                 if (col < this.columns - 1) this.getTileNumbersToRemove(idx, row, col + 1, this.tiles[npp].color);
             }
+            getTileNumbersToBusterRemove(tileNumbersToRemove, row, col) {
+                for (var r = 0; r < this.rows; ++r) {
+                    let dr = row - r;
+                    for (var c = 0; c < this.columns; ++c) {
+                        let dc = col - c;
+                        let distance = Math.sqrt(dr * dr + dc * dc);
+                        if (distance <= this.destructionRadius) {
+                            tileNumbersToRemove.push(this.npp(r, c));
+                        }
+                    }
+                }
+            }
             getNumberOfPossibleMoves() {
                 var numberOfPossibleMoves = 0;
                 for (var row = 0; row < this.rows; ++row) {
@@ -290,18 +364,36 @@
             onClick(event) {
                 if (this.isChanged || this.gameOver) return;
 
-                console.log("onClick" + this.isChanged);
+                console.log("onClick " + this.isChanged);
 
-                var row = parseInt(event.layerY / this.tailHeight);
-                var col = parseInt(event.layerX / this.tailWidth);
+                const rect = this.canvas.getBoundingClientRect()
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+    
+                var row = parseInt(y / this.tailHeight);
+                var col = parseInt(x / this.tailWidth);
 
                 var tileNumbersToRemove = [];
-                this.getTileNumbersToRemove(tileNumbersToRemove, row, col);
+                var n = this.npp(row, col);
+                var level = this.tiles[this.npp(row, col)].level;
+                if(level == 0)
+                    this.getTileNumbersToRemove(tileNumbersToRemove, row, col);
+                else
+                    this.getTileNumbersToBusterRemove(tileNumbersToRemove, row, col);
 
-                if (tileNumbersToRemove.length >= this.minSampleSize) {
+                if (tileNumbersToRemove.length >= this.minSampleSize || level > 0) {
 
                     this.requiredPoints -= parseInt(tileNumbersToRemove.length * (tileNumbersToRemove.length / this.minSampleSize));
                     --this.allowedMoves;
+
+                    if ((level == 0) && tileNumbersToRemove.length >= this.prizeSampleSize) {
+                        const n = this.npp(row, col);
+                        const index = tileNumbersToRemove.indexOf(n);
+                        if (index > -1) {
+                            tileNumbersToRemove.splice(index, 1);
+                            this.tiles[n].level = 1;
+                        }
+                    }
 
                     let hideSelectedTileAction = new ActionParallel();
                     tileNumbersToRemove.forEach((n) => {
@@ -337,12 +429,14 @@
             var N = parseInt(document.getElementById("geimBoardHeight").value);
             var C = parseInt(document.getElementById("colorsCount").value);
             var K = parseInt(document.getElementById("minSampleSize").value);
+            var L = parseInt(document.getElementById("prizeSampleSize").value);
+            var R = parseInt(document.getElementById("destructionRadius").value);
             var S = parseInt(document.getElementById("maxShuffleCount").value);
             var X = parseInt(document.getElementById("requiredPoints").value);
             var Y = parseInt(document.getElementById("allowedMoves").value);
 
             if (gameBoard) gameBoard.release();
-            gameBoard = new GameBoard(canvas, M, N, C, K, S, X, Y);
+            gameBoard = new GameBoard(canvas, M, N, C, K, L, R, S, X, Y);
         });
 
         var shuffleButton = document.getElementById("shuffleButton");
