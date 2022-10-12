@@ -15,13 +15,13 @@
             <input type="number" id="geimBoardHeight" name="geimBoardHeight" min="2" max="12" value="7" required>
 
             <label for="colorsCount">Количество цветов (C):</label>
-            <input type="number" id="colorsCount" name="colorsCount" min="3" max="12" value="7" required>
+            <input type="number" id="colorsCount" name="colorsCount" min="3" max="12" value="6" required>
 
             <label for="minSampleSize">Минимальный размер группы (K):</label>
-            <input type="number" id="minSampleSize" name="minSampleSize" min="2" max="12" value="2" required>
+            <input type="number" id="minSampleSize" name="minSampleSize" min="2" max="12" value="3" required>
 
             <label for="prizeSampleSize">Призовой размер группы (L):</label>
-            <input type="number" id="prizeSampleSize" name="prizeSampleSize" min="2" max="12" value="3" required>
+            <input type="number" id="prizeSampleSize" name="prizeSampleSize" min="2" max="12" value="4" required>
 
             <label for="destructionRadius">Радиус разрушений (R):</label>
             <input type="number" id="destructionRadius" name="destructionRadius" min="2" max="12" value="2" required>
@@ -30,7 +30,7 @@
             <input type="number" id="maxShuffleCount" name="maxShuffleCount" min="0" max="100" value="10" required>
 
             <label for="requiredPoints">Необходимо набрать очков (X):</label>
-            <input type="number" id="requiredPoints" name="requiredPoints" min="1" max="1000" value="1" required>
+            <input type="number" id="requiredPoints" name="requiredPoints" min="1" max="1000" value="1000" required>
 
             <label for="allowedMoves">Допустимое количество ходов (Y):</label>
             <input type="number" id="allowedMoves" name="allowedMoves" min="1" max="1000" value="50" required>
@@ -52,6 +52,7 @@
     </form>
 
     <script>
+        /// вспомогательный класс для работы с цветом в пространстве HSL
         class HSLColor {
             constructor(h, s, l, a = 100) {
                 this.hue = h;
@@ -67,20 +68,26 @@
                 this.lightness == color.lightness && this.alpha == color.alpha;
             }
         };
+        /// генерирует палитру заданного размера
         function getPalette(num_colors) {
-            var palette = [];
-            for (var i = 0, di = 360 / num_colors; i < 360; i += di) {
-                var hue = i;
-                var saturation = 90 + Math.random() * 10;
-                var lightness = 50 + Math.random() * 10;
+            let palette = [];
+            for (let i = 0, di = 360 / num_colors; i < 360; i += di) {
+                const hue = i;
+                const saturation = 90 + Math.random() * 10;
+                const lightness = 50 + Math.random() * 10;
                 palette.push(new HSLColor(hue, saturation, lightness));
             }
             return palette;
         }
-
+        /// easing-функции
+        /// используются в классе Action для "красоты"
+        /// пока две, самые популярные
+        /// остальные можно добавить при необходимости
         const easeInExpo = t => t === 0 ? 0 : Math.pow(2, 10 * t - 10)
         const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
-
+        /// Action - класс для создания анимаций
+        /// вызывает функцию actor в диапазоне величин from - to
+        /// в промежутке времени duration
         class Action {
             constructor (from, to, duration, actor) {
                 this.from = from;
@@ -102,10 +109,13 @@
                 return true;
             }
         };
+        /// ActionSequence - массив анимаций, выполняющихся последовательно
         class ActionSequence {
             constructor (actions = []) {
                 this.actions = actions;
             }
+            // возвращает true если произошли изменения
+            // иначе false
             update (timestamp) {
                 let isChanged = false;
                 while (this.actions.length) {
@@ -120,10 +130,13 @@
                 return isChanged || this.actions.length > 0;
             }
         }
+        /// ActionParallel - массив анимаций, выполняющихся параллельно
         class ActionParallel {
             constructor (actions = []) {
                 this.actions = actions;
             }
+            // возвращает true если произошли изменения
+            // иначе false
             update (timestamp) {
                 let isChanged = false;
                 this.actions.forEach(
@@ -136,6 +149,8 @@
                 return isChanged || this.actions.length > 0;
             }
         }
+        /// Класс Tile
+        /// может быть простой (level = 0) или "супер тайл" (level > 0)
         class Tile {
             constructor(row, column, width, height, color, level = 0) {
                 this.row = row;
@@ -147,7 +162,7 @@
             }
             draw(ctx) {
                 if (this.level) {
-                    var grd = ctx.createRadialGradient(
+                    let grd = ctx.createRadialGradient(
                         this.width * this.col + this.width / 2,
                         this.height * this.row + this.height / 2, 
                         this.width / 2,
@@ -178,20 +193,21 @@
                 this.minSampleSize = K;
                 this.prizeSampleSize = L;
                 this.destructionRadius = R;
-
                 this.shuffleCount = S;
-
                 this.requiredPoints = X;
                 this.allowedMoves = Y;
                 
                 this.ctx2d = this.canvas.getContext("2d");
+
+                // генерируем цветовую палитру заданного размера
                 this.palette = getPalette(this.colorsCount);
+
                 this.tailWidth = this.canvas.width / this.columns;
                 this.tailHeight = this.canvas.height / this.rows;
 
                 this.tiles = [];
-                for (var row = 0; row < this.rows; ++row) {
-                    for (var column = 0; column < this.columns; ++column) {
+                for (let row = 0; row < this.rows; ++row) {
+                    for (let column = 0; column < this.columns; ++column) {
                         this.tiles.push(null);
                     }
                 }
@@ -201,49 +217,63 @@
                 this.canvas.removeEventListener('click', null);
                 this.canvas.addEventListener('click', (event) => {this.onClick(event);});
 
+                // запускаем цикл обновления
                 this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
 
                 this.fillTiles();
             }
             npp = (row, col) => row * this.columns + col;
-            fillTiles() {
-                for (var row = this.rows - 1; row >= 0 ; --row) {
-                    for (var column = 0; column < this.columns; ++column) {
+            /// заполняет пустые ячейки новыми тайлами
+            /// добавляет соответствующие анимации
+            fillTiles(parallel = true) {
+                this.action = parallel ? new ActionParallel() : new ActionSequence();
+                for (let row = this.rows - 1; row >= 0 ; --row) {
+                    for (let column = 0; column < this.columns; ++column) {
                         let n = this.npp(row, column);
                         if (this.tiles[n] == null)
                         {
                             let colorNumber = parseInt(Math.random() * this.colorsCount);
                             let hsl = this.palette[colorNumber];
-                            this.tiles[n] = new Tile(row, column, this.tailWidth, this.tailHeight, new HSLColor(hsl.hue, hsl.saturation, hsl.lightness, 0));
-                            this.action.actions.push(new Action(0,100,100,(v)=>{this.tiles[n].color.alpha = v;}));
+                            this.tiles[n] = new Tile(-1, column, this.tailWidth, this.tailHeight, new HSLColor(hsl.hue, hsl.saturation, hsl.lightness, 0));
+                            this.action.actions.push(
+                                new ActionParallel([
+                                    new Action(0,100,100,(v)=>{this.tiles[n].color.alpha = v;}),
+                                    new Action(-1,row,100,(v)=>{this.tiles[n].row = v;})
+                                ])
+                            );
+
                             this.isChanged = true;
                         }
                     }
                 }
             }
+            /// затемняет игровое поле в конце игры
             hideTiles() {
                 let actions = new ActionParallel();
-                for (var row = this.rows - 1; row >= 0 ; --row) {
-                    for (var column = 0; column < this.columns; ++column) {
+                for (let row = this.rows - 1; row >= 0 ; --row) {
+                    for (let column = 0; column < this.columns; ++column) {
                         let n = this.npp(row, column);
                         actions.actions.push(new Action(100,30,1000,(v)=>{this.tiles[n].color.alpha = v;}));
                     }
                 }
                 this.action = actions;
             }
+            /// отключает обновление игры
             release() {
                 window.cancelAnimationFrame(this.raf);
             }
+            /// пересчитывает состояние игры
             update(timestamp) {
                 let isChanged = this.isChanged;
                 this.isChanged = false || this.action.update(timestamp);
                 this.raf = window.requestAnimationFrame((timestamp)=>{this.update(timestamp);});
                 if(isChanged == true) this.draw();
             }
+            /// выводит информацию о статусе игры  
             drawStatus() {
                 if (this.gameOver) return;
 
-                var possibleMoves = this.getNumberOfPossibleMoves();
+                let possibleMoves = this.getNumberOfPossibleMoves();
 
                 this.gameOver = (this.allowedMoves == 0) || (this.requiredPoints <= 0) || ((possibleMoves == 0) && (this.shuffleCount == 0));
 
@@ -267,36 +297,23 @@
                 console.log(msg);
                 document.getElementById('statusText').value = msg;
             }
+            /// рисует игровое поле
             draw() {
                 this.ctx2d.fillStyle = "#000000";
                 this.ctx2d.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 this.tiles.forEach((n, i) => { if (n) n.draw(this.ctx2d) });
+
+                if(this.isChanged == false) this.drawStatus();
 
                 if (this.msg) {
                     this.ctx2d.font = '36px serif';
                     this.ctx2d.fillStyle = "white";
                     this.ctx2d.textAlign = "center";                    
                     this.ctx2d.fillText(this.msg, this.canvas.width/2, this.canvas.height/2);                    
-                    this.ctx2d.textBaseLine = "top";                    
-                    this.ctx2d.fillText(this.msg, this.canvas.width/2, this.canvas.height/2);                    
-                }
-
-                if(this.isChanged == false) this.drawStatus();
-            }
-            shuffleTiles() {
-                if (this.isChanged || this.gameOver) return;
-
-                if (this.shuffleCount > 0) {
-                    for (let i = this.tiles.length - 1; i > 0; --i) {
-                        let j = Math.floor(Math.random() * (i + 1));
-                        if (this.tiles[i] != null && this.tiles[j] != null) {
-                            [this.tiles[i].color, this.tiles[j].color] = [this.tiles[j].color, this.tiles[i].color];
-                        }
-                    }
-                    this.isChanged = true;
-                    --this.shuffleCount;
                 }
             }
+            /// заполняет массив tileNumbers номерами тайлов, которые должны
+            /// на освободившиеся места
             getNumbersOfFallingTiles(tileNumbers) {
                 let numbersOfFallingTiles = [];
 
@@ -315,8 +332,10 @@
                 }
                 return numbersOfFallingTiles;
             }
+            /// заполняет массив idx номерами смежных тайлов того же цвета
+            /// что и тайл по которому кликнули
             getTileNumbersToRemove(idx, row, col, color = null) {
-                var npp = this.npp(row, col);
+                const npp = this.npp(row, col);
 
                 if (idx.includes(npp)) return;
                 if (this.tiles[npp] == null) return;
@@ -338,10 +357,12 @@
                 if (col > 0) this.getTileNumbersToRemove(idx, row, col - 1, this.tiles[npp].color);
                 if (col < this.columns - 1) this.getTileNumbersToRemove(idx, row, col + 1, this.tiles[npp].color);
             }
+            /// заполняет массив tileNumbersToRemove номерами тайлов
+            /// взорванных при клике по супер тайлу
             getTileNumbersToBusterRemove(tileNumbersToRemove, row, col) {
-                for (var r = 0; r < this.rows; ++r) {
+                for (let r = 0; r < this.rows; ++r) {
                     let dr = row - r;
-                    for (var c = 0; c < this.columns; ++c) {
+                    for (let c = 0; c < this.columns; ++c) {
                         let dc = col - c;
                         let distance = Math.sqrt(dr * dr + dc * dc);
                         if (distance <= this.destructionRadius) {
@@ -350,10 +371,12 @@
                     }
                 }
             }
+            /// подсчитывает возможное количество ходов на поле
+            /// количество тайлов, по которым можно результативно кликнуть
             getNumberOfPossibleMoves() {
-                var numberOfPossibleMoves = 0;
-                for (var row = 0; row < this.rows; ++row) {
-                    for (var column = 0; column < this.columns; ++column) {
+                let numberOfPossibleMoves = 0;
+                for (let row = 0; row < this.rows; ++row) {
+                    for (let column = 0; column < this.columns; ++column) {
                         let idx = [];
                         this.getTileNumbersToRemove(idx, row, column);
                         if (idx.length >= this.minSampleSize) ++numberOfPossibleMoves;
@@ -361,31 +384,55 @@
                 }
                 return numberOfPossibleMoves;
             }
-            onClick(event) {
+            /// ////////////////////////////////////////////////////////////////
+            /// Методы для взаимодействия с игроком
+            /// Перемешивание тайлов при клике по кнопке
+            shuffleTiles() {
                 if (this.isChanged || this.gameOver) return;
 
-                console.log("onClick " + this.isChanged);
+                if (this.shuffleCount > 0) {
+                    for (let i = this.tiles.length - 1; i > 0; --i) {
+                        let j = Math.floor(Math.random() * (i + 1));
+                        if (this.tiles[i] != null && this.tiles[j] != null) {
+                            [this.tiles[i].color, this.tiles[j].color] = [this.tiles[j].color, this.tiles[i].color];
+                        }
+                    }
+                    --this.shuffleCount;
+                    this.isChanged = true;
+                }
+            }
+            /// Реакция на клике по игровому полю
+            onClick(event) {
+                // нет реакции если игра закончена или идёт стабилизация
+                if (this.isChanged || this.gameOver) return;
 
+                // получаем координаты события внутри canvas
                 const rect = this.canvas.getBoundingClientRect()
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
     
-                var row = parseInt(y / this.tailHeight);
-                var col = parseInt(x / this.tailWidth);
+                const row = parseInt(y / this.tailHeight);
+                const col = parseInt(x / this.tailWidth);
 
-                var tileNumbersToRemove = [];
-                var n = this.npp(row, col);
-                var level = this.tiles[this.npp(row, col)].level;
+                // заполняем массив tileNumbersToRemove
+                // номерами тайлов одного цвета, если кликнули в "простой" тайл
+                // или номерами "взорванных" тайлов, если кликнули в "супер тайл"
+                let tileNumbersToRemove = [];
+                const n = this.npp(row, col);
+                const level = this.tiles[this.npp(row, col)].level;
                 if(level == 0)
                     this.getTileNumbersToRemove(tileNumbersToRemove, row, col);
                 else
                     this.getTileNumbersToBusterRemove(tileNumbersToRemove, row, col);
 
+                // если выбранных тайлов достаточно много или кликнули в "супер тайл"
                 if (tileNumbersToRemove.length >= this.minSampleSize || level > 0) {
-
+                    // подсчёт набранных очков и оставшихся ходов
                     this.requiredPoints -= parseInt(tileNumbersToRemove.length * (tileNumbersToRemove.length / this.minSampleSize));
                     --this.allowedMoves;
 
+                    // если выбранных тайлов достаточно много для выдачи нового "супер тайла"
+                    // то помещаем его на игровое поле в то место куда кликнули
                     if ((level == 0) && tileNumbersToRemove.length >= this.prizeSampleSize) {
                         const n = this.npp(row, col);
                         const index = tileNumbersToRemove.indexOf(n);
@@ -395,6 +442,7 @@
                         }
                     }
 
+                    // добавляем анимации "сжигания" тайлов
                     let hideSelectedTileAction = new ActionParallel();
                     tileNumbersToRemove.forEach((n) => {
                         hideSelectedTileAction.actions.push(new ActionSequence([
@@ -404,36 +452,39 @@
                         }
                     );
 
+                    // добавляем анимации перемещения оставшихся тайлов
                     let numbersOfFallingTiles = this.getNumbersOfFallingTiles(tileNumbersToRemove);
-                    let dropTilesAction = new ActionSequence();
+                    let dropTilesAction = new ActionParallel();
                     numbersOfFallingTiles.forEach((t) => {
-                        dropTilesAction.actions.push(new Action(t[1],t[2],100,(v)=>{this.tiles[t[0]].row = v;}));
-                        dropTilesAction.actions.push(new Action(0,0,0,(v)=>{this.tiles[t[3]] = this.tiles[t[0]]; this.tiles[t[0]] = null;}));
+                        dropTilesAction.actions.push(new ActionSequence([
+                            new Action(t[1],t[2],300,(v)=>{this.tiles[t[0]].row = v;}),
+                            new Action(0,0,0,(v)=>{this.tiles[t[3]] = this.tiles[t[0]]; this.tiles[t[0]] = null;})
+                        ]));
                     });
 
                     this.action = new ActionSequence([hideSelectedTileAction, dropTilesAction]);
 
-                    this.action.actions.push(new Action(0,0,0,(v)=>{this.fillTiles();}));
-                    
-                    this.isChanged = true;
+                    // добавляем анимации добавления новых тайлов
+                    this.action.actions.push(new Action(0,0,0,(v)=>{this.fillTiles(false);}));                    
                 }
             }
         };
+    </script>
 
+    <script>
         var gameBoard = null;
-
         var resetButton = document.getElementById("resetButton");
         resetButton.addEventListener('click', function (event) {
-            var canvas = document.getElementById("myCanvas");
-            var M = parseInt(document.getElementById("geimBoardWidth").value);
-            var N = parseInt(document.getElementById("geimBoardHeight").value);
-            var C = parseInt(document.getElementById("colorsCount").value);
-            var K = parseInt(document.getElementById("minSampleSize").value);
-            var L = parseInt(document.getElementById("prizeSampleSize").value);
-            var R = parseInt(document.getElementById("destructionRadius").value);
-            var S = parseInt(document.getElementById("maxShuffleCount").value);
-            var X = parseInt(document.getElementById("requiredPoints").value);
-            var Y = parseInt(document.getElementById("allowedMoves").value);
+            const canvas = document.getElementById("myCanvas");
+            const M = parseInt(document.getElementById("geimBoardWidth").value);
+            const N = parseInt(document.getElementById("geimBoardHeight").value);
+            const C = parseInt(document.getElementById("colorsCount").value);
+            const K = parseInt(document.getElementById("minSampleSize").value);
+            const L = parseInt(document.getElementById("prizeSampleSize").value);
+            const R = parseInt(document.getElementById("destructionRadius").value);
+            const S = parseInt(document.getElementById("maxShuffleCount").value);
+            const X = parseInt(document.getElementById("requiredPoints").value);
+            const Y = parseInt(document.getElementById("allowedMoves").value);
 
             if (gameBoard) gameBoard.release();
             gameBoard = new GameBoard(canvas, M, N, C, K, L, R, S, X, Y);
